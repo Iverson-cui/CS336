@@ -177,7 +177,7 @@ def generate_byte_pair_frequency_tensor(pre_frequency_dict: dict):
 
 
 def generate_merged_pre_frequency_dict(
-    pre_frequency_dict: dict, merge_byte_pair: tuple
+    pre_frequency_dict: dict, merge_byte_pair: tuple, merge_index: int
 ):
     """
     This function generates the new pre-tokenization dict based on the old one and the pair we
@@ -185,6 +185,7 @@ def generate_merged_pre_frequency_dict(
     Inputs:
         pre_frequency_dict: The original pre-tokenization frequency dictionary.
         merge_byte_pair: The byte pair to merge (as a tuple of two bytes).
+        merge_index: The index of the merge operation used to decide new token.
 
     Output:
         new_pre_frequency_dict: The new pre-tokenization frequency dictionary.
@@ -196,8 +197,8 @@ def generate_merged_pre_frequency_dict(
         i = 0
         while i < len(token_list) - 1:
             if (token_list[i], token_list[i + 1]) == merge_byte_pair:
-                # Replace the pair with new token (256 in this case)
-                token_list[i] = 256
+                # Replace the pair with new token (256 + merge_index)
+                token_list[i] = 256 + merge_index
                 # Remove the second byte of the pair
                 token_list.pop(i + 1)
             else:
@@ -205,6 +206,48 @@ def generate_merged_pre_frequency_dict(
         new_token_key = tuple(token_list)
         new_pre_frequency_dict[new_token_key] = frequency
 
+    return new_pre_frequency_dict
+
+
+def merge_n_times(initial_pre_frequency_dict: dict, n: int):
+    """
+    This function merges the most frequent byte pair n times.
+    Inputs:
+        initial_pre_frequency_dict: The initial pre-tokenization frequency dictionary.
+        n: The number of times to merge the most frequent byte pair.
+
+    Output:
+        new_pre_frequency_dict: The new pre-tokenization frequency dictionary after merging.
+    """
+    # @ keep the frequency of current byte pairs by another dictionary
+    frequency_tensor = generate_byte_pair_frequency_tensor(initial_pre_frequency_dict)
+    # merge_byte_pair is a tuple containing 2 int standing for the byte pair to merge
+    merge_byte_pair = (frequency_tensor[0][0], frequency_tensor[0][1])
+
+    # @ first, merge 1 byte pair and generate new byte pair frequency after merge
+    # 2 things need to be done if we want to merge the byte pair:
+    # 1. Based on the pair to merge, generate new pre-tokenization dict
+    # 2. Based on the new pre dict, generate the byte pair frequency dict
+    new_pre_frequency_dict = generate_merged_pre_frequency_dict(
+        initial_pre_frequency_dict, merge_byte_pair, 0
+    )
+    # @ rest merge in iteration
+    for _ in range(n - 1):
+        new_frequency_tensor = generate_byte_pair_frequency_tensor(
+            new_pre_frequency_dict
+        )
+        # merge_byte_pair is a tuple containing 2 int standing for the byte pair to merge
+        new_merge_byte_pair = (new_frequency_tensor[0][0], new_frequency_tensor[0][1])
+
+        # We need to use new pre_frequency_dict containing 1st merge as input
+        new_new_pre_frequency_dict = generate_merged_pre_frequency_dict(
+            new_pre_frequency_dict, new_merge_byte_pair, _ + 1
+        )
+
+        new_pre_frequency_dict = new_new_pre_frequency_dict
+        # new_new_frequency_tensor = generate_byte_pair_frequency_tensor(
+        #     new_new_pre_frequency_dict
+        # )
     return new_pre_frequency_dict
 
 
@@ -217,21 +260,7 @@ PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s
 # boundaries is a list containing the location of boundaries in the txt file
 boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 # @ pre-tokenization to the text
-#! pre_frequency_dict keeps the same no matter what merge we make
-#! New frequency tensor is generated based on this dict
+# @ pre_frequency_dict with no merge operation done
 pre_frequency_dict = generate_pre_frequency_dict(f, PAT, boundaries)
-
-# @ keep the frequency of current byte pairs by another dictionary
-frequency_tensor = generate_byte_pair_frequency_tensor(pre_frequency_dict)
-# merge_byte_pair is a tuple containing 2 int standing for the byte pair to merge
-merge_byte_pair = (frequency_tensor[0][0], frequency_tensor[0][1])
-
-# @ merge 1 byte pair and generate new byte pair frequency after merge
-# 2 things need to be done if we want to merge the byte pair:
-# 1. Based on the pair to merge, generate new pre-tokenization dict
-# 2. Based on the new pre dict, generate the byte pair frequency dict
-new_pre_frequency_dict = generate_merged_pre_frequency_dict(
-    pre_frequency_dict, merge_byte_pair
-)
-
-new_frequency_tensor = generate_byte_pair_frequency_tensor(new_pre_frequency_dict)
+# @ final pre_frequency_dict after merging n times
+final_pre_frequency_dict = merge_n_times(pre_frequency_dict, 3)
