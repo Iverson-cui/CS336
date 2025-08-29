@@ -48,3 +48,15 @@ gunzip owt_valid.txt.gz
 cd ..
 ```
 
+## My implementation
+After getting the data, first thing we need to do is to separate the data, cut it into multiple parts. 
+1. generate chunk boundaries for the files based on the parallelism level and number of processes we have.
+2. segment each chunk into multiple parts based on <endoftext> token. <endoftext> should be seen as a single token and not be merged with other tokens. We identify it, separate the text and strip it.
+
+Next, we do pre-tokenization. We have a dictionary keeping the frequency of each pre-tokenized string.
+
+Then, based on the pre-tokenization dictionary, we generate frequencies of different byte pairs and get the most frequent byte pair which is also the next merge pair.
+
+We finally merge the most frequent byte pair in the original text and update the pre-tokenization dictionary accordingly. 
+
+Merging $n$ times is done by loop.
