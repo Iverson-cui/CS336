@@ -164,25 +164,25 @@ def generate_byte_pair_frequency_tensor(pre_frequency_dict: dict):
     # it's like [ ( ( 32,116 ),641902 ), ( ( 97,98 ),123456 ), ... ]
     sorted_pairs = sorted(pair_frequency_dict.items(), key=lambda x: x[1], reverse=True)
     # Print some results
-    print("Top 10 byte pairs:")
-    for i, (byte_pair, freq) in enumerate(sorted_pairs[:10]):
-        # Convert bytes to characters for readability (if possible)
-        try:
-            char1 = (
-                chr(byte_pair[0])
-                if 32 <= byte_pair[0] <= 126
-                else f"\\x{byte_pair[0]:02x}"
-            )
-            char2 = (
-                chr(byte_pair[1])
-                if 32 <= byte_pair[1] <= 126
-                else f"\\x{byte_pair[1]:02x}"
-            )
-            print(
-                f"  {i+1}. ({byte_pair[0]}, {byte_pair[1]}) -> '{char1}{char2}': {freq}"
-            )
-        except:
-            print(f"  {i+1}. {byte_pair}: {freq}")
+    # print("Top 10 byte pairs:")
+    # for i, (byte_pair, freq) in enumerate(sorted_pairs[:10]):
+    #     # Convert bytes to characters for readability (if possible)
+    #     try:
+    #         char1 = (
+    #             chr(byte_pair[0])
+    #             if 32 <= byte_pair[0] <= 126
+    #             else f"\\x{byte_pair[0]:02x}"
+    #         )
+    #         char2 = (
+    #             chr(byte_pair[1])
+    #             if 32 <= byte_pair[1] <= 126
+    #             else f"\\x{byte_pair[1]:02x}"
+    #         )
+    #         print(
+    #             f"  {i+1}. ({byte_pair[0]}, {byte_pair[1]}) -> '{char1}{char2}': {freq}"
+    #         )
+    #     except:
+    #         print(f"  {i+1}. {byte_pair}: {freq}")
 
     # Convert sorted_pairs to numpy tensor
     # Extract the data into separate arrays
@@ -286,14 +286,14 @@ def merge_n_times(
             new_frequency_tensor[0][0],
             new_frequency_tensor[0][1],
         )
-        print(f"New merge byte pair (ints): {new_merge_byte_pair_ints}")
+        # print(f"New merge byte pair (ints): {new_merge_byte_pair_ints}")
         # but when storing it in merges and vocab, we want bytes objects
         # so the bytes object may contain multiple characters
         new_merge_byte_pair_bytes = (
             vocab[new_frequency_tensor[0][0]],
             vocab[new_frequency_tensor[0][1]],
         )
-        print(f"New merge byte pair (bytes): {new_merge_byte_pair_bytes}")
+        # print(f"New merge byte pair (bytes): {new_merge_byte_pair_bytes}")
         merges.append(new_merge_byte_pair_bytes)
 
         new_token_id = 256 + len_special_tokens + _ + 1
@@ -341,7 +341,7 @@ def main():
     """
     For the use of multiprocessing we have to name the whole function main
     """
-    final_vocab, merges = train("../data/valid.txt", 260, [b"<|endoftext|>"])
+    final_vocab, merges = train("../data/valid.txt", 1000, [b"<|endoftext|>"])
     print("Final Vocabulary:")
     print(f"Vocabulary size: {len(final_vocab)}")
     print("\nSpecial and merged tokens:")
