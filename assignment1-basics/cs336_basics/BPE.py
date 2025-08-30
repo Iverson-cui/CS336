@@ -6,10 +6,13 @@ import multiprocessing
 import cProfile
 
 
+NUM_PROCESSES = 8
+
+
 def find_chunk_boundaries(
     f: str,
     desired_num_chunks: int,
-    split_special_token: bytes,
+    split_special_tokens: list[bytes],
 ) -> list[int]:
     """
     Chunk the file into parts that can be counted independently.
@@ -17,7 +20,7 @@ def find_chunk_boundaries(
     return a list of int, with each element the index of the boundary for a given file
     """
     assert isinstance(
-        split_special_token, bytes
+        split_special_tokens, list
     ), "Must represent special token as a bytestring"
 
     # Get total file size in bytes
@@ -47,10 +50,16 @@ def find_chunk_boundaries(
                     break
 
                 # Find the special token in the mini chunk
-                found_at = mini_chunk.find(split_special_token)
-                if found_at != -1:
-                    chunk_boundaries[bi] = initial_position + found_at
+                positions = [
+                    pos
+                    for token in split_special_tokens
+                    if (pos := mini_chunk.find(token)) != -1
+                ]
+                if positions:
+                    earliest_pos = min(positions)
+                    chunk_boundaries[bi] = initial_position + earliest_pos
                     break
+
                 initial_position += mini_chunk_size
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
@@ -127,9 +136,10 @@ def generate_byte_pair_frequency_tensor(pre_frequency_dict: dict):
     In this function, first a dictionary of byte pair frequency is generated, then a numpy array is
     generated based on that intermediate dictionary.
     Input:
-        pre_frequency_dict: a dictionary, whose keys are byte and whose values are int
+        pre_frequency_dict: a dictionary, whose keys are tuples of int and whose values are int
     Output:
         A 3D numpy tensor of shape (num_pairs, 3) where each row is [byte1, byte2, frequency]
+        This tensor has elements of type np.int32.
     """
     pair_frequency_dict = {}
     for token_bytes, frequency in pre_frequency_dict.items():
@@ -137,7 +147,7 @@ def generate_byte_pair_frequency_tensor(pre_frequency_dict: dict):
         if len(token_bytes) <= 1:
             continue
         # Get all byte pairs using zip
-        # byte_pairs is a list of 2 element tuples, each element is of type bytes
+        # byte_pairs is a list of 2 element tuples, each element is of type int
         byte_pairs = list(zip(token_bytes[:-1], token_bytes[1:]))
 
         # Update frequency for each byte pair
@@ -194,89 +204,167 @@ def generate_merged_pre_frequency_dict(
     This function generates the new pre-tokenization dict based on the old one and the pair we
     want to merge.
     Inputs:
-        pre_frequency_dict: The original pre-tokenization frequency dictionary.
-        merge_byte_pair: The byte pair to merge (as a tuple of two bytes).
+        pre_frequency_dict: The original pre-tokenization frequency dictionary, keys are bytes and values are int
+        merge_byte_pair: The byte pair to merge (as a tuple of two ints).
         merge_index: The index of the merge operation used to decide new token.
 
     Output:
-        new_pre_frequency_dict: The new pre-tokenization frequency dictionary.
+        new_pre_frequency_dict: The new pre-tokenization frequency dictionary with key tuples and value int
+        The tuple contains multiple ints which is larger than 256.
     """
     new_pre_frequency_dict = {}
     for token_bytes, frequency in pre_frequency_dict.items():
+        # list() convert bytes to list of ints
         token_list = list(token_bytes)
         # Find and merge byte pairs and modify it
         i = 0
         while i < len(token_list) - 1:
-            if (token_list[i], token_list[i + 1]) == merge_byte_pair:
+            if (token_list[i], token_list[i + 1]) == (
+                int(merge_byte_pair[0]),
+                int(merge_byte_pair[1]),
+            ):
                 # Replace the pair with new token (256 + merge_index)
                 token_list[i] = 256 + merge_index
                 # Remove the second byte of the pair
                 token_list.pop(i + 1)
             else:
                 i += 1
+        # Original key: bytes are transformed to tuples of int, which may be larger than 256
         new_token_key = tuple(token_list)
         new_pre_frequency_dict[new_token_key] = frequency
 
     return new_pre_frequency_dict
 
 
-def merge_n_times(initial_pre_frequency_dict: dict, n: int):
+def merge_n_times(
+    initial_pre_frequency_dict: dict, n: int, len_special_tokens: int, vocab: dict
+):
     """
     This function merges the most frequent byte pair n times.
     Inputs:
         initial_pre_frequency_dict: The initial pre-tokenization frequency dictionary.
         n: The number of times to merge the most frequent byte pair.
+        len_special_tokens: The length of the special tokens list.
+        vocab: The current vocabulary dictionary mapping token IDs to byte sequences.
 
     Output:
         new_pre_frequency_dict: The new pre-tokenization frequency dictionary after merging.
     """
     # @ keep the frequency of current byte pairs by another dictionary
+    # initial_pre_frequency_dict has keys bytes and values int
     frequency_tensor = generate_byte_pair_frequency_tensor(initial_pre_frequency_dict)
     # merge_byte_pair is a tuple containing 2 int standing for the byte pair to merge
-    merge_byte_pair = (frequency_tensor[0][0], frequency_tensor[0][1])
+    # Although frequency_tensor[0][0] is of type np.int32, there is no bug
+    # That's because now no merge is done, so all int is smaller than 256 thus can -> bytes
+    # merge_byte_pair is a tuple of 2 bytes
+    merge_byte_pair = (bytes([frequency_tensor[0][0]]), bytes([frequency_tensor[0][1]]))
+    # merges is a list of tuples which contain 2 bytes
+    merges = []
+    merges.append(merge_byte_pair)
+
+    # Add the merged pair to vocabulary
+    new_token_id = 256 + len_special_tokens
+    # vocab's elements are of type bytes
+    vocab[new_token_id] = merge_byte_pair[0] + merge_byte_pair[1]
 
     # @ first, merge 1 byte pair and generate new byte pair frequency after merge
     # 2 things need to be done if we want to merge the byte pair:
     # 1. Based on the pair to merge, generate new pre-tokenization dict
     # 2. Based on the new pre dict, generate the byte pair frequency dict
     new_pre_frequency_dict = generate_merged_pre_frequency_dict(
-        initial_pre_frequency_dict, merge_byte_pair, 0
+        initial_pre_frequency_dict,
+        (frequency_tensor[0][0], frequency_tensor[0][1]),
+        len_special_tokens,
     )
     # @ rest merge in iteration
     for _ in range(n - 1):
         new_frequency_tensor = generate_byte_pair_frequency_tensor(
             new_pre_frequency_dict
         )
-        # merge_byte_pair is a tuple containing 2 int standing for the byte pair to merge
-        new_merge_byte_pair = (new_frequency_tensor[0][0], new_frequency_tensor[0][1])
+        # new_merge_byte_pair is a tuple containing 2 np.int32 elements
+        new_merge_byte_pair_ints = (
+            new_frequency_tensor[0][0],
+            new_frequency_tensor[0][1],
+        )
+        print(f"New merge byte pair (ints): {new_merge_byte_pair_ints}")
+        # but when storing it in merges and vocab, we want bytes objects
+        # so the bytes object may contain multiple characters
+        new_merge_byte_pair_bytes = (
+            vocab[new_frequency_tensor[0][0]],
+            vocab[new_frequency_tensor[0][1]],
+        )
+        print(f"New merge byte pair (bytes): {new_merge_byte_pair_bytes}")
+        merges.append(new_merge_byte_pair_bytes)
+
+        new_token_id = 256 + len_special_tokens + _ + 1
+        vocab[new_token_id] = (
+            new_merge_byte_pair_bytes[0] + new_merge_byte_pair_bytes[1]
+        )
 
         # We need to use new pre_frequency_dict containing 1st merge as input
         new_new_pre_frequency_dict = generate_merged_pre_frequency_dict(
-            new_pre_frequency_dict, new_merge_byte_pair, _ + 1
+            new_pre_frequency_dict, new_merge_byte_pair_ints, len_special_tokens + _ + 1
         )
 
         new_pre_frequency_dict = new_new_pre_frequency_dict
         # new_new_frequency_tensor = generate_byte_pair_frequency_tensor(
         #     new_new_pre_frequency_dict
         # )
-    return new_pre_frequency_dict
+    return merges
 
 
-def main():
-    f = "../data/valid.txt"
-    num_processes = 8
+def train(input_path: str, vocab_size: int, special_tokens: list[bytes]):
+    f = input_path
+    merge_time = vocab_size - 256 - len(special_tokens)
+
+    # Initialize vocab with primitive 256 bytes (0-255)
+    vocab = {i: bytes([i]) for i in range(256)}
+
+    # Add special tokens starting from token ID 256
+    for i, special_token in enumerate(special_tokens):
+        vocab[256 + i] = special_token
 
     # This is the pattern used to divide words, i.e. pre-tokenization
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
     # boundaries is a list containing the location of boundaries in the txt file
-    boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+    boundaries = find_chunk_boundaries(f, NUM_PROCESSES, special_tokens)
     # @ pre-tokenization to the text
     # @ pre_frequency_dict with no merge operation done
     pre_frequency_dict = generate_pre_frequency_dict(f, PAT, boundaries)
     # @ final pre_frequency_dict after merging n times
-    final_pre_frequency_dict = merge_n_times(pre_frequency_dict, 3)
+    merges = merge_n_times(pre_frequency_dict, merge_time, len(special_tokens), vocab)
+    return vocab, merges
+
+
+def main():
+    """
+    For the use of multiprocessing we have to name the whole function main
+    """
+    final_vocab, merges = train("../data/valid.txt", 260, [b"<|endoftext|>"])
+    print("Final Vocabulary:")
+    print(f"Vocabulary size: {len(final_vocab)}")
+    print("\nSpecial and merged tokens:")
+    for token_id, token_bytes in final_vocab.items():
+        if token_id >= 256:  # Only show special tokens and merged tokens
+            try:
+                # Try to decode as UTF-8 for readability
+                token_str = token_bytes.decode("utf-8", errors="replace")
+                print(f"  {token_id}: {token_bytes} -> '{token_str}'")
+            except:
+                print(f"  {token_id}: {token_bytes}")
+
+    print(f"\nMerges performed ({len(merges)} total):")
+    for i, (byte1, byte2) in enumerate(merges):
+        try:
+            # Try to show readable characters
+            char1 = byte1.decode("utf-8", errors="replace")
+            char2 = byte2.decode("utf-8", errors="replace")
+            print(f"  {i+1}. {byte1} + {byte2} -> '{char1}' + '{char2}'")
+        except:
+            print(f"  {i+1}. {byte1} + {byte2}")
 
 
 if __name__ == "__main__":
-    cProfile.run("main()")
+    # cProfile.run("main()")
+    main()
