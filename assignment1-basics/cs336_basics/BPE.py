@@ -2,7 +2,8 @@ import os
 from typing import BinaryIO
 import regex as re
 import numpy as np
-from tqdm import tqdm
+import multiprocessing
+import cProfile
 
 
 def find_chunk_boundaries(
@@ -56,56 +57,66 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
+def process_chunk(args):
+    """
+    Worker function to process a single chunk of the file.
+    Args: tuple containing (file_path, start, end, pattern)
+    Returns: dictionary mapping pre-tokenized strings to their frequencies
+    """
+    file_path, start, end, pattern = args
+    chunk_frequency_dict = {}
+
+    with open(file_path, "rb") as f:
+        f.seek(start)
+        # chunk is of type string
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        # @ before running pre-tokenization we first need to split based on special tokens
+        special_tokens = ["<|endoftext|>"]
+        delimiter_pattern = "|".join(re.escape(token) for token in special_tokens)
+        # Split the chunk into document segments based on special tokens
+        document_segments = re.split(delimiter_pattern, chunk)
+        # Pre-tokenize each segment separately
+        # @ Run pre-tokenization on your chunk and store the counts for each pre-token
+        for segment in document_segments:
+            if segment.strip():  # Skip empty segments
+                # chunk_after_preto is a list of strings
+                # whose elements are word string divided by pre-tokenization
+                # finditer is an iterator of strings.
+                chunk_after_preto = re.finditer(pattern, segment)
+                for i, match in enumerate(chunk_after_preto):
+                    chunk_frequency_dict[
+                        match.group().encode("utf-8", errors="ignore")
+                    ] = (
+                        chunk_frequency_dict.get(
+                            match.group().encode("utf-8", errors="ignore"), 0
+                        )
+                        + 1
+                    )
+
+    return chunk_frequency_dict
+
+
 def generate_pre_frequency_dict(file: str, pattern, boundaries: list[int]):
     """
     given the boundaries and file name, return a dictionary mapping pre-tokenized strings to their frequencies
     the element in the dictionary: first element is the bytes, second element is the frequency int.
     """
+    # Prepare arguments for each chunk
+    chunk_pairs = list(zip(boundaries[:-1], boundaries[1:]))
+    chunk_args = [(file, start, end, pattern) for start, end in chunk_pairs]
+
+    # Use multiprocessing to process chunks in parallel
+    with multiprocessing.Pool() as pool:
+        chunk_results = pool.map(process_chunk, chunk_args)
+
+    # Merge all chunk results into a single dictionary
     pre_frequency_dict = {}
-    with open(file, "rb") as f:
+    for chunk_dict in chunk_results:
+        for token_bytes, frequency in chunk_dict.items():
+            pre_frequency_dict[token_bytes] = (
+                pre_frequency_dict.get(token_bytes, 0) + frequency
+            )
 
-        # The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
-
-        # Add progress bar with total number of chunks
-        chunk_pairs = list(zip(boundaries[:-1], boundaries[1:]))
-        for start, end in tqdm(chunk_pairs, desc="Processing chunks", unit="chunk"):
-            f.seek(start)
-            # chunk is of type string
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # @ before running pre-tokenization we first need to split based on special tokens
-            special_tokens = ["<|endoftext|>"]
-            delimiter_pattern = "|".join(re.escape(token) for token in special_tokens)
-            # Split the chunk into document segments based on special tokens
-            document_segments = re.split(delimiter_pattern, chunk)
-            # Pre-tokenize each segment separately
-            # @ Run pre-tokenization on your chunk and store the counts for each pre-token
-            for segment in document_segments:
-                if segment.strip():  # Skip empty segments
-                    # chunk_after_preto is a list of strings
-                    # whose elements are word string divided by pre-tokenization
-                    # finditer is an iterator of strings.
-                    chunk_after_preto = re.finditer(pattern, segment)
-                    for i, match in enumerate(chunk_after_preto):
-                        # print(f"Match {i + 1}:")
-                        # match.group() is of type string
-                        # print(f"  Text: '{match.group()}'")
-                        # string.encode() is of type bytes
-                        # print(match.group().encode("utf-8", errors="ignore"))
-                        pre_frequency_dict[
-                            match.group().encode("utf-8", errors="ignore")
-                        ] = (
-                            pre_frequency_dict.get(
-                                match.group().encode("utf-8", errors="ignore"), 0
-                            )
-                            + 1
-                        )
-        # print(
-        #     f"  Start position: {match.start()}"
-        # )  # Where match begins in original text
-        # print(f"  End position: {match.end()}")  # Where match ends in original text
-        # print(f"  Span: {match.span()}")  # (start, end) as a tuple
-        # print()
     return pre_frequency_dict
 
 
@@ -251,16 +262,21 @@ def merge_n_times(initial_pre_frequency_dict: dict, n: int):
     return new_pre_frequency_dict
 
 
-f = "../data/valid.txt"
-num_processes = 40000
+def main():
+    f = "../data/valid.txt"
+    num_processes = 8
 
-# This is the pattern used to divide words, i.e. pre-tokenization
-PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    # This is the pattern used to divide words, i.e. pre-tokenization
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
-# boundaries is a list containing the location of boundaries in the txt file
-boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-# @ pre-tokenization to the text
-# @ pre_frequency_dict with no merge operation done
-pre_frequency_dict = generate_pre_frequency_dict(f, PAT, boundaries)
-# @ final pre_frequency_dict after merging n times
-final_pre_frequency_dict = merge_n_times(pre_frequency_dict, 3)
+    # boundaries is a list containing the location of boundaries in the txt file
+    boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+    # @ pre-tokenization to the text
+    # @ pre_frequency_dict with no merge operation done
+    pre_frequency_dict = generate_pre_frequency_dict(f, PAT, boundaries)
+    # @ final pre_frequency_dict after merging n times
+    final_pre_frequency_dict = merge_n_times(pre_frequency_dict, 3)
+
+
+if __name__ == "__main__":
+    cProfile.run("main()")
