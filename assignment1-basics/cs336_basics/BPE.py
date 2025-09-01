@@ -1,9 +1,11 @@
+from math import e
 import os
-from typing import BinaryIO
+from typing import BinaryIO, Iterable, Iterator
 import regex as re
 import numpy as np
 import multiprocessing
 import cProfile
+import pickle
 
 
 NUM_PROCESSES = 8
@@ -341,30 +343,189 @@ def main():
     """
     For the use of multiprocessing we have to name the whole function main
     """
-    final_vocab, merges = train("../data/valid.txt", 1000, [b"<|endoftext|>"])
-    print("Final Vocabulary:")
-    print(f"Vocabulary size: {len(final_vocab)}")
-    print("\nSpecial and merged tokens:")
-    for token_id, token_bytes in final_vocab.items():
-        if token_id >= 256:  # Only show special tokens and merged tokens
-            try:
-                # Try to decode as UTF-8 for readability
-                token_str = token_bytes.decode("utf-8", errors="replace")
-                print(f"  {token_id}: {token_bytes} -> '{token_str}'")
-            except:
-                print(f"  {token_id}: {token_bytes}")
+    final_vocab, merges = train("../data/valid.txt", 300, [b"<|endoftext|>"])
+    # print("Final Vocabulary:")
+    # print(f"Vocabulary size: {len(final_vocab)}")
+    # print("\nSpecial and merged tokens:")
+    # for token_id, token_bytes in final_vocab.items():
+    #     if token_id >= 256:  # Only show special tokens and merged tokens
+    #         try:
+    #             # Try to decode as UTF-8 for readability
+    #             token_str = token_bytes.decode("utf-8", errors="replace")
+    #             print(f"  {token_id}: {token_bytes} -> '{token_str}'")
+    #         except:
+    #             print(f"  {token_id}: {token_bytes}")
 
-    print(f"\nMerges performed ({len(merges)} total):")
-    for i, (byte1, byte2) in enumerate(merges):
-        try:
-            # Try to show readable characters
-            char1 = byte1.decode("utf-8", errors="replace")
-            char2 = byte2.decode("utf-8", errors="replace")
-            print(f"  {i+1}. {byte1} + {byte2} -> '{char1}' + '{char2}'")
-        except:
-            print(f"  {i+1}. {byte1} + {byte2}")
+    # print(f"\nMerges performed ({len(merges)} total):")
+    # for i, (byte1, byte2) in enumerate(merges):
+    #     try:
+    #         # Try to show readable characters
+    #         char1 = byte1.decode("utf-8", errors="replace")
+    #         char2 = byte2.decode("utf-8", errors="replace")
+    #         print(f"  {i+1}. {byte1} + {byte2} -> '{char1}' + '{char2}'")
+    #     except:
+    #         print(f"  {i+1}. {byte1} + {byte2}")
+
+    # generate tokenizer object
+    tokenizer = Tokenizer(final_vocab, merges, special_tokens=["<|endoftext|>"])
+    test_string = "Hello, how are you?"
+    encoded_ids = tokenizer.encode(test_string)
+    print(encoded_ids)
+    decoded_string = tokenizer.decode(encoded_ids)
+    print(decoded_string)
+    assert test_string == decoded_string
+
+
+class Tokenizer:
+    def __init__(self, vocab, merges, special_tokens=None):
+        """
+        INPUTS:
+            vocab: dict[int, bytes]
+            merges: list[tuple[bytes, bytes]]
+            special_tokens: list[str] | None = None
+        """
+        self.vocab = vocab
+        self.merges = merges
+        self.special_tokens = special_tokens or []
+        # Create reverse lookup: bytes -> token_id
+        self.bytes_to_id = {value: key for key, value in vocab.items()}
+
+    @classmethod
+    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
+        """
+        This is Tokenizer's additional constructor that takes argument from file rather
+        than directly input it.
+        This is a class method.
+        """
+
+        import pickle
+
+        # Load vocabulary using pickle for binary data handling
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+
+        # Load merges using pickle
+        with open(merges_filepath, "rb") as f:
+            merges = pickle.load(f)
+
+        return cls(vocab, merges, special_tokens)
+
+    def encode(self, text: str) -> list[int]:
+        """
+        Given a str of text that we want to encode, this function returns the corresponding
+        list of token IDs.
+        Special tokens must be handled very well.
+        """
+        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        # @ before running pre-tokenization we first need to split based on special tokens
+        # Create capturing group pattern to preserve special tokens
+        # This is different from above for we want to preserve special tokens
+        delimiter_pattern = (
+            "(" + "|".join(re.escape(token) for token in self.special_tokens) + ")"
+        )
+        # Split the chunk into document segments based on special tokens
+        # Pre-tokenize each segment separately
+        text_segments = re.split(delimiter_pattern, text)
+        tokenid_list = []
+        for segment in text_segments:
+            if not segment:  # Skip empty segments
+                continue
+            # if this segment is special tokens
+            if segment in self.special_tokens:
+                # Handle special token - find its token ID
+                special_token_bytes = segment.encode("utf-8")
+                if special_token_bytes in self.bytes_to_id:
+                    token_id = self.bytes_to_id[special_token_bytes]
+                    # update tokenid_list based on this special token
+                    tokenid_list.append(token_id)
+                continue
+            # @ for each segment, pretokenize first
+            # here, the segment is text instead of special tokens
+            # if segment.strip():  # Skip empty segments
+            # word is a generator containing preto result
+            word = re.finditer(PAT, segment)
+            for match in word:
+                # match is the word string we are looking at
+                assert isinstance(match.group(), str)
+                word_text = match.group()
+
+                # transform every word into a list of int (byte values)
+                byte_list = list(word_text.encode("utf-8", errors="ignore"))
+
+                # Apply BPE merges to this word
+                self._apply_bpe_merges(byte_list, tokenid_list)
+        return tokenid_list
+
+    def _apply_bpe_merges(self, byte_list, tokenid_list):
+        """
+        Apply BPE merges to a list of bytes
+        This is a sub function used in encode function
+        """
+        if len(byte_list) == 0:
+            return
+
+        if len(byte_list) == 1:
+            # Single byte
+            single_byte = bytes([byte_list[0]])
+            if single_byte in self.bytes_to_id:
+                tokenid_list.append(self.bytes_to_id[single_byte])
+            return
+
+        i = 0
+        while i < len(byte_list):
+            if i < len(byte_list) - 1:
+                # Try to merge current byte with next byte
+                byte1 = bytes([byte_list[i]])
+                byte2 = bytes([byte_list[i + 1]])
+
+                # Check if this pair can be merged
+                if (byte1, byte2) in self.merges:
+                    merged_bytes = byte1 + byte2
+                    if merged_bytes in self.bytes_to_id:
+                        tokenid_list.append(self.bytes_to_id[merged_bytes])
+                        i += 2  # Skip both bytes
+                        continue
+
+                # No merge possible, add current byte
+                if byte1 in self.bytes_to_id:
+                    tokenid_list.append(self.bytes_to_id[byte1])
+                i += 1
+            else:
+                # Last byte
+                last_byte = bytes([byte_list[i]])
+                if last_byte in self.bytes_to_id:
+                    tokenid_list.append(self.bytes_to_id[last_byte])
+                i += 1
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """Encode an iterable of strings, yielding token IDs"""
+        for text in iterable:
+            yield from self.encode(text)
+
+    def decode(self, ids: list[int]) -> str:
+        """
+        This function, given the token id list of a paragraph of text, return
+        the paragraph text string based on the vocabulary.
+        Input:
+            ids: a list of int whose element is the token ID.
+        Output:
+            A string representing the decoded text.
+        """
+        current_bytes = b""
+        for tokenid in ids:
+            assert tokenid in self.vocab
+            corresponding_byte = self.vocab[tokenid]
+            current_bytes += corresponding_byte
+        return current_bytes.decode("utf-8", errors="ignore")
 
 
 if __name__ == "__main__":
     # cProfile.run("main()")
     main()
+    final_vocab, merges = train("../data/valid.txt", 300, [b"<|endoftext|>"])
+    test_tokenizer = Tokenizer(final_vocab, merges, special_tokens=["<|endoftext|>"])
+    vocab = test_tokenizer.vocab
+    merges = test_tokenizer.merges
+    test_bytes = b"Hello, how are you?"
+    test_string = "Hello, how are you?"
+    # encode_result = test_tokenizer.encode("Hello, how are you?")

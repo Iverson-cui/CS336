@@ -9,6 +9,20 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+import sys
+import os
+
+# Get the directory containing this file
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to get to assignment1-basics directory
+parent_dir = os.path.dirname(current_dir)
+# Add the assignment1-basics directory to sys.path
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Now import from cs336_basics
+from cs336_basics.BPE import Tokenizer
+
 
 def run_linear(
     d_in: int,
@@ -16,7 +30,7 @@ def run_linear(
     weights: Float[Tensor, " d_out d_in"],
     in_features: Float[Tensor, " ... d_in"],
 ) -> Float[Tensor, " ... d_out"]:
-    """
+    """s
     Given the weights of a Linear layer, compute the transformation of a batched input.
 
     Args:
@@ -452,7 +466,9 @@ def run_cross_entropy(
     raise NotImplementedError
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -559,7 +575,8 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    testTokenizer = Tokenizer(vocab, merges, special_tokens)
+    return testTokenizer
 
 
 def run_train_bpe(

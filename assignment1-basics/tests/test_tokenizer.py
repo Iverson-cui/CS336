@@ -7,10 +7,28 @@ import sys
 
 import psutil
 import pytest
+
 import tiktoken
 
-from .adapters import get_tokenizer
-from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
+
+# # Get the directory containing this file
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+# # Go up one level to get to assignment1-basics directory
+# parent_dir = os.path.dirname(current_dir)
+# # Add the assignment1-basics directory to sys.path
+# if parent_dir not in sys.path:
+#     sys.path.insert(0, parent_dir)
+
+# # Now import from cs336_basics
+# from cs336_basics.BPE import Tokenizer
+
+# package version import
+# from .adapters import get_tokenizer
+# from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
+
+# standalone version import
+from adapters import get_tokenizer
+from common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
 VOCAB_PATH = FIXTURES_PATH / "gpt2_vocab.json"
 MERGES_PATH = FIXTURES_PATH / "gpt2_merges.txt"
@@ -21,7 +39,9 @@ def memory_limit(max_mem):
         def wrapper(*args, **kwargs):
             process = psutil.Process(os.getpid())
             prev_limits = resource.getrlimit(resource.RLIMIT_AS)
-            resource.setrlimit(resource.RLIMIT_AS, (process.memory_info().rss + max_mem, -1))
+            resource.setrlimit(
+                resource.RLIMIT_AS, (process.memory_info().rss + max_mem, -1)
+            )
             try:
                 result = f(*args, **kwargs)
                 return result
@@ -86,6 +106,11 @@ def test_roundtrip_empty():
 
 
 def test_empty_matches_tiktoken():
+    """
+    All tests of tiktoken means comparing your tokenizer with OpenAI's tokenizer to see if the results are the same
+    """
+    # tiktoken is OpenAI's open source tokenizer
+    # reference_tokenizer is a tokenizer based on OpenAI
     reference_tokenizer = tiktoken.get_encoding("gpt2")
     tokenizer = get_tokenizer_from_vocab_merges_path(
         vocab_path=VOCAB_PATH,
@@ -97,9 +122,11 @@ def test_empty_matches_tiktoken():
     ids = tokenizer.encode(test_string)
     assert ids == reference_ids
 
+    # result of every element of ids decoding back
     tokenized_string = [tokenizer.decode([x]) for x in ids]
     assert tokenized_string == []
 
+    # both ids and reference_ids should decode back to test string
     assert tokenizer.decode(ids) == test_string
     assert reference_tokenizer.decode(reference_ids) == test_string
 
@@ -168,6 +195,7 @@ def test_roundtrip_ascii_string():
     )
     test_string = "Hello, how are you?"
     encoded_ids = tokenizer.encode(test_string)
+    print(encoded_ids)
     decoded_string = tokenizer.decode(encoded_ids)
     assert test_string == decoded_string
 
@@ -237,7 +265,9 @@ def test_unicode_string_with_special_tokens_matches_tiktoken():
     )
     test_string = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
 
-    reference_ids = reference_tokenizer.encode(test_string, allowed_special={"<|endoftext|>"})
+    reference_ids = reference_tokenizer.encode(
+        test_string, allowed_special={"<|endoftext|>"}
+    )
     ids = tokenizer.encode(test_string)
     assert ids == reference_ids
 
@@ -340,7 +370,9 @@ def test_tinystories_matches_tiktoken():
     corpus_path = FIXTURES_PATH / "tinystories_sample.txt"
     with open(corpus_path) as f:
         corpus_contents = f.read()
-    reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
+    reference_ids = reference_tokenizer.encode(
+        corpus_contents, allowed_special={"<|endoftext|>"}
+    )
     ids = tokenizer.encode(corpus_contents)
     assert ids == reference_ids
 
@@ -356,7 +388,9 @@ def test_encode_special_token_trailing_newlines():
     corpus_path = FIXTURES_PATH / "special_token_trailing_newlines.txt"
     with open(corpus_path) as f:
         corpus_contents = f.read()
-    reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
+    reference_ids = reference_tokenizer.encode(
+        corpus_contents, allowed_special={"<|endoftext|>"}
+    )
     ids = tokenizer.encode(corpus_contents)
     assert ids == reference_ids
 
@@ -372,7 +406,9 @@ def test_encode_special_token_double_newline_non_whitespace():
     corpus_path = FIXTURES_PATH / "special_token_double_newlines_non_whitespace.txt"
     with open(corpus_path) as f:
         corpus_contents = f.read()
-    reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
+    reference_ids = reference_tokenizer.encode(
+        corpus_contents, allowed_special={"<|endoftext|>"}
+    )
     ids = tokenizer.encode(corpus_contents)
     assert ids == reference_ids
 
@@ -402,7 +438,9 @@ def test_encode_iterable_tinystories_matches_tiktoken():
     corpus_path = FIXTURES_PATH / "tinystories_sample.txt"
     with open(corpus_path) as f:
         corpus_contents = f.read()
-    reference_ids = reference_tokenizer.encode(corpus_contents, allowed_special={"<|endoftext|>"})
+    reference_ids = reference_tokenizer.encode(
+        corpus_contents, allowed_special={"<|endoftext|>"}
+    )
     all_ids = []
     with open(FIXTURES_PATH / "tinystories_sample.txt") as f:
         for _id in tokenizer.encode_iterable(f):
@@ -432,7 +470,9 @@ def test_encode_iterable_memory_usage():
     not sys.platform.startswith("linux"),
     reason="rlimit support for non-linux systems is spotty.",
 )
-@pytest.mark.xfail(reason="Tokenizer.encode is expected to take more memory than allotted (1MB).")
+@pytest.mark.xfail(
+    reason="Tokenizer.encode is expected to take more memory than allotted (1MB)."
+)
 def test_encode_memory_usage():
     """
     We expect this test to fail, since Tokenizer.encode is not expected to be memory efficient.
@@ -462,3 +502,23 @@ def _encode(tokenizer, text):
     for just this function. We set the memory limit to 1MB.
     """
     return tokenizer.encode(text)
+
+
+if __name__ == "__main__":
+    tokenizer = get_tokenizer_from_vocab_merges_path(
+        vocab_path=VOCAB_PATH,
+        merges_path=MERGES_PATH,
+    )
+    vocab = tokenizer.vocab
+    merges = tokenizer.merges
+    test_string = " "
+    encoded_ids = tokenizer.encode(test_string)
+    # encoded_ids=[39, 68, 75, 75, 78, 11, 71, 78, 86, 64, 81, 68, 88, 78, 84, 30]
+    # this is wrong. First: no merge is done; Second: no blank in encoded_ids
+    # print(encoded_ids)
+
+    # test result:
+    # blank -> space
+    # no merge even for single word
+    decoded_string = tokenizer.decode(encoded_ids)
+    assert test_string == decoded_string
