@@ -406,6 +406,9 @@ class Tokenizer:
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         if self.special_tokens:
             sorted_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+            # this pattern is like (<\|endoftext\|>|<\|start\|>)
+            # the () outside makes sure special tokens remained in the list
+            # without (), text_segment will not include special tokens
             delimiter_pattern = (
                 "("
                 + "|".join(re.escape(token) for token in sorted_special_tokens)
