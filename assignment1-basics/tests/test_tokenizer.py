@@ -507,30 +507,30 @@ def _encode(tokenizer, text):
     return tokenizer.encode(text)
 
 
+def find_key_position(target_key, dictionary):
+    for index, key in enumerate(dictionary.keys()):
+        if key == target_key:
+            return index
+    return -1  # Not found
+
+
 if __name__ == "__main__":
-    # reference_tokenizer = tiktoken.get_encoding("gpt2")
-    # tokenizer = get_tokenizer_from_vocab_merges_path(
-    #     vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
-    # )
-    # test_string = "Hello, how are you?"
-
-    # reference_ids = reference_tokenizer.encode(test_string)
-    # ids = tokenizer.encode(test_string)
-    # vocab = tokenizer.vocab
-    # # for i in ids:
-    # #     print(vocab[i])
-    # assert ids == reference_ids
-
-    # tokenized_string = [tokenizer.decode([x]) for x in ids]
-    # assert tokenized_string == ["Hello", ",", " how", " are", " you", "?"]
-
-    # assert tokenizer.decode(ids) == test_string
-    # assert reference_tokenizer.decode(reference_ids) == test_string
+    reference_tokenizer = tiktoken.get_encoding("gpt2")
     tokenizer = get_tokenizer_from_vocab_merges_path(
-        vocab_path=VOCAB_PATH,
-        merges_path=MERGES_PATH,
+        vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
     )
-    test_string = "s"
-    encoded_ids = tokenizer.encode(test_string)
-    decoded_string = tokenizer.decode(encoded_ids)
-    assert test_string == decoded_string
+    test_string = "Hello, how are you?"
+
+    reference_ids = reference_tokenizer.encode(test_string)
+    ids = tokenizer.encode(test_string)
+    vocab = tokenizer.vocab
+    merges = tokenizer.merges
+    for i in ids:
+        print(merges[i])
+    assert ids == reference_ids
+
+    tokenized_string = [tokenizer.decode([x]) for x in ids]
+    assert tokenized_string == ["Hello", ",", " how", " are", " you", "?"]
+
+    assert tokenizer.decode(ids) == test_string
+    assert reference_tokenizer.decode(reference_ids) == test_string
