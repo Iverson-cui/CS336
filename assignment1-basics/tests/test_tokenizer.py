@@ -23,12 +23,12 @@ import tiktoken
 # from cs336_basics.BPE import Tokenizer
 
 # package version import
-# from .adapters import get_tokenizer
-# from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
+from .adapters import get_tokenizer
+from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
 # standalone version import
-from adapters import get_tokenizer
-from common import FIXTURES_PATH, gpt2_bytes_to_unicode
+# from adapters import get_tokenizer
+# from common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
 VOCAB_PATH = FIXTURES_PATH / "gpt2_vocab.json"
 MERGES_PATH = FIXTURES_PATH / "gpt2_merges.txt"
@@ -209,7 +209,10 @@ def test_ascii_string_matches_tiktoken():
 
     reference_ids = reference_tokenizer.encode(test_string)
     ids = tokenizer.encode(test_string)
-    # assert ids == reference_ids
+    merges = tokenizer.merges
+    for i in ids:
+        print(merges[i])
+    assert ids == reference_ids
 
     tokenized_string = [tokenizer.decode([x]) for x in ids]
     assert tokenized_string == ["Hello", ",", " how", " are", " you", "?"]
@@ -505,20 +508,29 @@ def _encode(tokenizer, text):
 
 
 if __name__ == "__main__":
+    # reference_tokenizer = tiktoken.get_encoding("gpt2")
+    # tokenizer = get_tokenizer_from_vocab_merges_path(
+    #     vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
+    # )
+    # test_string = "Hello, how are you?"
+
+    # reference_ids = reference_tokenizer.encode(test_string)
+    # ids = tokenizer.encode(test_string)
+    # vocab = tokenizer.vocab
+    # # for i in ids:
+    # #     print(vocab[i])
+    # assert ids == reference_ids
+
+    # tokenized_string = [tokenizer.decode([x]) for x in ids]
+    # assert tokenized_string == ["Hello", ",", " how", " are", " you", "?"]
+
+    # assert tokenizer.decode(ids) == test_string
+    # assert reference_tokenizer.decode(reference_ids) == test_string
     tokenizer = get_tokenizer_from_vocab_merges_path(
         vocab_path=VOCAB_PATH,
         merges_path=MERGES_PATH,
     )
-    vocab = tokenizer.vocab
-    merges = tokenizer.merges
-    test_string = " "
+    test_string = "s"
     encoded_ids = tokenizer.encode(test_string)
-    # encoded_ids=[39, 68, 75, 75, 78, 11, 71, 78, 86, 64, 81, 68, 88, 78, 84, 30]
-    # this is wrong. First: no merge is done; Second: no blank in encoded_ids
-    # print(encoded_ids)
-
-    # test result:
-    # blank -> space
-    # no merge even for single word
     decoded_string = tokenizer.decode(encoded_ids)
     assert test_string == decoded_string
