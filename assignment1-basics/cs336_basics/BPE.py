@@ -353,29 +353,7 @@ def main():
     For the use of multiprocessing we have to name the whole function main
     """
     final_vocab, merges = train("../data/valid.txt", 300, [b"<|endoftext|>"])
-    # print("Final Vocabulary:")
-    # print(f"Vocabulary size: {len(final_vocab)}")
-    # print("\nSpecial and merged tokens:")
-    # for token_id, token_bytes in final_vocab.items():
-    #     if token_id >= 256:  # Only show special tokens and merged tokens
-    #         try:
-    #             # Try to decode as UTF-8 for readability
-    #             token_str = token_bytes.decode("utf-8", errors="replace")
-    #             print(f"  {token_id}: {token_bytes} -> '{token_str}'")
-    #         except:
-    #             print(f"  {token_id}: {token_bytes}")
 
-    # print(f"\nMerges performed ({len(merges)} total):")
-    # for i, (byte1, byte2) in enumerate(merges):
-    #     try:
-    #         # Try to show readable characters
-    #         char1 = byte1.decode("utf-8", errors="replace")
-    #         char2 = byte2.decode("utf-8", errors="replace")
-    #         print(f"  {i+1}. {byte1} + {byte2} -> '{char1}' + '{char2}'")
-    #     except:
-    #         print(f"  {i+1}. {byte1} + {byte2}")
-
-    # generate tokenizer object
     tokenizer = Tokenizer(final_vocab, merges, special_tokens=["<|endoftext|>"])
     test_string = "Hello, how are you?"
     encoded_ids = tokenizer.encode(test_string)
@@ -419,216 +397,6 @@ class Tokenizer:
 
         return cls(vocab, merges, special_tokens)
 
-    # def encode(self, text: str) -> list[int]:
-    #     """
-    #     Given a str of text that we want to encode, this function returns the corresponding
-    #     list of token IDs.
-    #     Special tokens must be handled very well.
-    #     """
-    #     print(f"Encoding text: {text}")
-    #     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    #     # @ before running pre-tokenization we first need to split based on special tokens
-    #     # Create capturing group pattern to preserve special tokens
-    #     # This is different from above for we want to preserve special tokens
-    #     delimiter_pattern = (
-    #         "(" + "|".join(re.escape(token) for token in self.special_tokens) + ")"
-    #     )
-    #     # Split the chunk into document segments based on special tokens
-    #     # Pre-tokenize each segment separately
-    #     text_segments = re.split(delimiter_pattern, text)
-    #     tokenid_list = []
-    #     for segment in text_segments:
-    #         if not segment:  # Skip empty segments
-    #             continue
-    #         # if this segment is special tokens
-    #         if segment in self.special_tokens:
-    #             # Handle special token - find its token ID
-    #             special_token_bytes = segment.encode("utf-8")
-    #             if special_token_bytes in self.bytes_to_id:
-    #                 token_id = self.bytes_to_id[special_token_bytes]
-    #                 # update tokenid_list based on this special token
-    #                 tokenid_list.append(token_id)
-    #             continue
-    #         # @ for each segment, pretokenize first
-    #         # here, the segment is text instead of special tokens
-    #         # if segment.strip():  # Skip empty segments
-    #         # word is a generator containing pretokenization result
-    #         word = re.finditer(PAT, segment)
-    #         # for each pre-tokenization word
-    #         for match in word:
-    #             # match is the word string we are looking at
-    #             assert isinstance(match.group(), str)
-    #             word_text = match.group()
-    #             print(f"This word text is {word_text}")
-
-    #             # transform every word into a list of int (byte values)
-    #             byte_list = [
-    #                 self.bytes_to_id[bytes([b])]
-    #                 for b in word_text.encode("utf-8", errors="ignore")
-    #             ]
-    #             # byte_list = list(word_text.encode("utf-8", errors="ignore"))
-    #             print(f"Byte list: {byte_list}")
-    #             # print(f"Current word: {word_text}")
-    #             # print(f"Byte list: {byte_list}")
-    #             # print("Next we enter into BPE merging stage")
-
-    #             # Apply BPE merges to this word
-    #             self._apply_bpe_merges(byte_list)
-    #             # update tokenid_list to contain byte_list
-    #             for i in byte_list:
-    #                 tokenid_list.append(i)
-    #     return tokenid_list
-
-    # def _apply_bpe_merges(self, byte_list):
-    #     """
-    #     Apply BPE merges to a list of bytes
-    #     This is a sub function used in encode function
-    #     """
-    #     # total_byte_list is the temporary byte list
-    #     if len(byte_list) == 0:
-    #         return
-
-    #     if len(byte_list) == 1:
-    #         # Single byte
-    #         single_byte = self.vocab[byte_list[0]]
-    #         assert single_byte in self.bytes_to_id
-    #         byte_list = [self.bytes_to_id[single_byte]]
-    #         return
-
-    #     # We modify the list in place
-    #     # if the list is empty, we come to the end
-    #     # first, Initialize byte1 and byte2 with first two bytes
-    #     byte1 = merge_bytes(self.vocab[byte_list[0]], 0)
-    #     print(f"Initial byte1: {byte1.bytes}")
-    #     byte2 = merge_bytes(self.vocab[byte_list[1]], 1)
-    #     print(f"Initial byte2: {byte2.bytes}")
-    #     print("Initial two bytes are given, now we go into merge_end stage")
-    #     # given two initial bytes, this function can merge until the end
-    #     self._merge_two_bytes_till_the_end(byte1, byte2, byte_list)
-
-    # def _merge_two_bytes_till_the_end(
-    #     self,
-    #     byte1: merge_bytes,
-    #     byte2: merge_bytes,
-    #     byte_list: list,
-    # ):
-    #     """
-    #     Merge the whole byte list till the end.
-    #     Inputs:
-    #         byte1: a merge_bytes, with byte1.bytes and byte1.index
-    #         byte2: a merge_bytes, with byte2.bytes and byte2.index
-    #         byte_list: the original list of bytes, which is intact during the process
-
-    #     Output:
-    #         merge time in this round
-
-    #     This function modifies byte_list in place, so no need to return anything.
-    #     """
-
-    #     print(f"Current byte list: {byte_list}")
-    #     print(f"Attempting merge: {byte1.bytes}, {byte2.bytes}")
-
-    #     # if two bytes can be merged together
-    #     if (byte1.bytes, byte2.bytes) in self.merges:
-    #         print(f"Bytes can be merged: {byte1.bytes}, {byte2.bytes}")
-    #         merged_bytes = byte1.bytes + byte2.bytes
-    #         assert merged_bytes in self.bytes_to_id
-
-    #         # tokenid_list.append(self.bytes_to_id[merged_bytes])
-    #         # if byte1 and byte2 are the last 2 bytes
-    #         if len(byte_list) == 2:
-    #             # only 2 bytes in the list, and they can merge
-    #             # so only 1 element exists in byte_list
-    #             print("This word only has 2 bytes, so merge is done now.")
-    #             byte_list = [self.bytes_to_id[merged_bytes]]
-    #             return
-    #         # if not
-    #         # update byte_list by:
-    #         #   replace byte1 index with this new tokenid
-    #         #   remove byte2 index byte
-    #         tokenid = self.bytes_to_id[merged_bytes]
-    #         print(f"Merging {byte1.bytes} + {byte2.bytes} -> token ID {tokenid}")
-    #         print(
-    #             f"As can be seen in vocab, {self.vocab[tokenid]} is the merged bytes in vocab."
-    #         )
-    #         byte_list[byte1.index] = tokenid
-    #         byte_list.pop(byte2.index)
-    #         print(f"Updated byte list after merge: {byte_list}")
-    #         # update byte1 and byte2 for the next iteration
-    #         byte1 = merge_bytes(merged_bytes, byte1.index)
-    #         # print(f"Merge! Merged bytes: {byte1}")
-    #         # first, perform backward merge if byte1 is not the first
-    #         if not byte1.index == 0:
-    #             print(
-    #                 f"byte1 {byte1.bytes} is not the first so we need to do backward merge"
-    #             )
-    #             prev_bytes = merge_bytes(
-    #                 self.vocab[byte_list[byte1.index - 1]], byte1.index - 1
-    #             )
-    #             print(
-    #                 f"Previous bytes: {prev_bytes.bytes} with index {prev_bytes.index}"
-    #             )
-    #             while (prev_bytes.bytes, byte1.bytes) in self.merges:
-    #                 print(
-    #                     f"Backward merging can be done: {prev_bytes.bytes}, {byte1.bytes}"
-    #                 )
-    #                 # merged_bytes becomes bigger
-    #                 merged_bytes = prev_bytes.bytes + byte1.bytes
-    #                 assert merged_bytes in self.bytes_to_id
-    #                 tokenid = self.bytes_to_id[merged_bytes]
-    #                 print(f"Backward merge token ID: {tokenid}")
-    #                 print(
-    #                     f"corresponding merging bytes in my vocab: {self.vocab[tokenid]}"
-    #                 )
-    #                 # perform merge operation
-    #                 byte_list[prev_bytes.index] = tokenid
-    #                 byte_list.pop(byte1.index)
-    #                 print(f"Byte list after backward merge: {byte_list}")
-    #                 # update byte1 and prev_bytes
-    #                 byte1 = merge_bytes(merged_bytes, prev_bytes.index)
-    #                 # if we hit the start of the list
-    #                 if prev_bytes.index == 0:
-    #                     break
-    #                 prev_bytes = merge_bytes(
-    #                     self.vocab[byte_list[prev_bytes.index - 1]],
-    #                     prev_bytes.index - 1,
-    #                 )
-
-    #             print("Backward is done. Now forward merge")
-    #             if prev_bytes.index >= len(byte_list) - 2:
-    #                 print("we have come to the end, merge is over!!")
-    #                 return
-    #             next_byte = merge_bytes(
-    #                 self.vocab[byte_list[prev_bytes.index + 2]],
-    #                 prev_bytes.index + 2,
-    #             )
-    #             prev_bytes = merge_bytes(
-    #                 self.vocab[byte_list[prev_bytes.index + 1]],
-    #                 prev_bytes.index + 1,
-    #             )
-    #             self._merge_two_bytes_till_the_end(prev_bytes, next_byte, byte_list)
-    #             return
-    #         # if byte1 is the first
-    #         # do forward merge directly
-
-    #         print(f"{byte1.bytes} is at first, no forward merge is possible")
-    #         byte2 = merge_bytes(self.vocab[byte_list[byte2.index]], byte2.index)
-    #         assert byte1.index + 1 == byte2.index
-    #         # print(f"Next byte: {byte2}")
-    #         self._merge_two_bytes_till_the_end(byte1, byte2, byte_list)
-    #         return
-    #     # if can not be merged
-    #     print(f"Bytes cannot be merged: {byte1.bytes}, {byte2.bytes}")
-    #     assert byte1.bytes in self.bytes_to_id
-    #     if byte2.index == len(byte_list) - 1:
-    #         print("we have come to the end, merge is over!!")
-    #         return
-    #     byte1 = byte2
-    #     # print(f"No merge! now Current byte: {byte1}")
-    #     byte2 = merge_bytes(self.vocab[byte_list[byte1.index + 1]], byte1.index + 1)
-    #     # print(f"Next byte: {byte2}")
-    #     self._merge_two_bytes_till_the_end(byte1, byte2, byte_list)
-    #     return
     def encode(self, text: str) -> list[int]:
         """
         Given a str of text that we want to encode, this function returns the corresponding
@@ -636,13 +404,23 @@ class Tokenizer:
         Special tokens must be handled very well.
         """
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        if self.special_tokens:
+            sorted_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+            delimiter_pattern = (
+                "("
+                + "|".join(re.escape(token) for token in sorted_special_tokens)
+                + ")"
+            )
+            text_segments = re.split(delimiter_pattern, text)
+            # # Handle special tokens first
+            # delimiter_pattern = (
+            #     "(" + "|".join(re.escape(token) for token in self.special_tokens) + ")"
+            # )
+            # text_segments = re.split(delimiter_pattern, text)
+            # print(f"Text segments after splitting: {text_segments}")
 
-        # Handle special tokens first
-        delimiter_pattern = (
-            "(" + "|".join(re.escape(token) for token in self.special_tokens) + ")"
-        )
-        text_segments = re.split(delimiter_pattern, text)
-
+        else:
+            text_segments = [text]
         tokenid_list = []
         for segment in text_segments:
             if not segment:  # Skip empty segments
