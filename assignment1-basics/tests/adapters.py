@@ -22,6 +22,7 @@ if parent_dir not in sys.path:
 
 # Now import from cs336_basics
 from cs336_basics.BPE import Tokenizer
+from cs336_basics.building_blocks import Linear, Embedding
 
 
 def run_linear(
@@ -43,7 +44,9 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    linear = Linear(d_in, d_out)
+    linear.set_weights(weights)
+    return linear(in_features)
 
 
 def run_embedding(
@@ -65,7 +68,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    embedding = Embedding(vocab_size, d_model)
+    embedding.set_weights(weights)
+    return embedding(token_ids)
 
 
 def run_swiglu(
