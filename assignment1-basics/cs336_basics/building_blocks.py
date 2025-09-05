@@ -76,3 +76,47 @@ class Embedding(nn.Module):
             self.embedding_dim,
         )
         self.weight = torch.nn.Parameter(weights)
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
+        """
+        Inputs:
+            d_model: int Hidden dimension of the model
+            eps: float = 1e-5 Epsilon value for numerical stability
+            device: torch.device | None = None Device to store the parameters on
+            dtype: torch.dtype | None = None Data type of the parameters
+        """
+        super().__init__()
+        self.d_model = d_model
+        self.eps = eps
+        # weights is of shape (d_model,) initialized to all ones
+        self.weights = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        Process an input tensor of shape (batch_size, sequence_length, d_model) and return a tensor of the same shape.
+        """
+        assert input.shape[-1] == self.d_model
+        original_dtype = input.dtype
+        # first we transform input to float32 for numerical stability
+        input = input.to(torch.float32)
+        # Calculate RMS (Root Mean Square)
+        # keepdim=True is to make sure broadcasting works well
+        rms = torch.sqrt(torch.mean(input**2, dim=-1, keepdim=True) + self.eps)
+
+        # Normalize and apply learnable weights
+        normalized = input / rms
+        # in the background broadcast self.weights to match the shape of normalized
+        result = normalized * self.weights  # Element-wise multiplication
+
+        # Return the result in the original dtype
+        return result.to(original_dtype)
+
+    def set_weights(self, weights: torch.Tensor):
+        """
+        This function sets the weights of the RMSNorm layer.
+        weights is of shape (d_model,)
+        """
+        assert weights.shape == (self.d_model,)
+        self.weights = torch.nn.Parameter(weights)

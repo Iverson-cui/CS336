@@ -22,7 +22,7 @@ if parent_dir not in sys.path:
 
 # Now import from cs336_basics
 from cs336_basics.BPE import Tokenizer
-from cs336_basics.building_blocks import Linear, Embedding
+from cs336_basics.building_blocks import Linear, Embedding, RMSNorm
 
 
 def run_linear(
@@ -397,7 +397,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    test_rmsnorm = RMSNorm(d_model, eps)
+    test_rmsnorm.set_weights(weights)
+    return test_rmsnorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
