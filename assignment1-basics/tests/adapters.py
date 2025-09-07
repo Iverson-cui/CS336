@@ -32,6 +32,7 @@ from cs336_basics.building_blocks import (
     scaled_dot_product_attention,
     multihead_self_attention,
     transformer_block,
+    transformer_lm,
 )
 
 
@@ -415,7 +416,40 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    test_transformer_lm = transformer_lm(
+        d_model,
+        num_heads,
+        d_ff,
+        rope_theta,
+        d_model // num_heads,
+        vocab_size,
+        context_length,
+        num_layers,
+    )
+    # Set token embeddings
+    test_transformer_lm.token_embedding.set_weights(weights["token_embeddings.weight"])
+
+    # Set weights for each transformer layer
+    for layer_idx in range(num_layers):
+        test_transformer_lm.transformer_blocks[layer_idx].set_weights(
+            weights[f"layers.{layer_idx}.attn.q_proj.weight"],
+            weights[f"layers.{layer_idx}.attn.k_proj.weight"],
+            weights[f"layers.{layer_idx}.attn.v_proj.weight"],
+            weights[f"layers.{layer_idx}.attn.output_proj.weight"],
+            weights[f"layers.{layer_idx}.ln1.weight"],
+            weights[f"layers.{layer_idx}.ffn.w1.weight"],
+            weights[f"layers.{layer_idx}.ffn.w2.weight"],
+            weights[f"layers.{layer_idx}.ffn.w3.weight"],
+            weights[f"layers.{layer_idx}.ln2.weight"],
+        )
+
+    # Set final layer norm weights
+    test_transformer_lm.final_RMSNorm.set_weights(weights["ln_final.weight"])
+
+    # Set language model head weights
+    test_transformer_lm.lm_head.set_weights(weights["lm_head.weight"])
+
+    return test_transformer_lm(in_indices)
 
 
 def run_rmsnorm(

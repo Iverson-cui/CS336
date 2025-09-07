@@ -40,6 +40,11 @@ class Linear(nn.Module):
 class Embedding(nn.Module):
 
     def __init__(self, num_embeddings, embedding_dim, device=None, dtype=None):
+        """
+        Inputs:
+            num_embeddings: int Size of the vocabulary, i.e., the number of unique tokens.
+            embedding_dim: int Dimensionality of the embedding vectors.
+        """
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -530,4 +535,83 @@ class transformer_block(nn.Module):
         """
         x = self.attention(self.RMSNorm1(x)) + x
         x = self.ffn(self.RMSNorm2(x)) + x
+        return x
+
+    def set_weights(
+        self,
+        q_proj_weight: torch.Tensor,
+        k_proj_weight: torch.Tensor,
+        v_proj_weight: torch.Tensor,
+        o_proj_weight: torch.Tensor,
+        ln1_weight: torch.Tensor,
+        w1_weight: torch.Tensor,
+        w2_weight: torch.Tensor,
+        w3_weight: torch.Tensor,
+        ln2_weight: torch.Tensor,
+    ):
+        """Set all weights for this transformer block."""
+        # Set attention weights
+        self.attention.set_weights(
+            q_proj_weight, k_proj_weight, v_proj_weight, o_proj_weight
+        )
+
+        # Set first RMSNorm weights
+        self.RMSNorm1.set_weights(ln1_weight)
+
+        # Set FFN weights
+        self.ffn.set_weights(w1_weight, w2_weight, w3_weight)
+
+        # Set second RMSNorm weights
+        self.RMSNorm2.set_weights(ln2_weight)
+
+
+class transformer_lm(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        theta: float,
+        d_k: int,
+        vocab_size: int,
+        context_length: int,
+        num_layers: int,
+        device=None,
+        dtype=None,
+    ):
+        """
+        Additional inputs:
+            vocab_size: int The size of the vocabulary, necessary for determining the dimensionality of the token embedding matrix.
+            context_length: int The maximum context length, necessary for determining the dimensionality of the position embedding matrix.
+            num_layers: int The number of Transformer blocks to use.
+        """
+        super().__init__()
+        # self.transformer_blocks includes num_layers transformer_block modules
+        self.transformer_blocks = nn.ModuleList(
+            [
+                transformer_block(
+                    d_model, num_heads, d_ff, theta, d_k, context_length, device, dtype
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.token_embedding = Embedding(
+            vocab_size, d_model, device=device, dtype=dtype
+        )
+        self.final_RMSNorm = RMSNorm(d_model, device=device, dtype=dtype)
+        self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Inputs:
+            x: torch.Tensor of shape (batch_size, seq_len) where each value is an integer in [0, vocab_size)
+
+        Output:
+            torch.Tensor of shape (batch_size, seq_len, vocab_size)
+        """
+        x = self.token_embedding(x)
+        for block in self.transformer_blocks:
+            x = block(x)
+        x = self.final_RMSNorm(x)
+        x = self.lm_head(x)
         return x
