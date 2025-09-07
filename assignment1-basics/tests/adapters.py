@@ -22,7 +22,17 @@ if parent_dir not in sys.path:
 
 # Now import from cs336_basics
 from cs336_basics.BPE import Tokenizer
-from cs336_basics.building_blocks import Linear, Embedding, RMSNorm
+from cs336_basics.building_blocks import (
+    Linear,
+    Embedding,
+    RMSNorm,
+    SwiGLU,
+    RotaryPositionalEmbedding,
+    softmax,
+    scaled_dot_product_attention,
+    multihead_self_attention,
+    transformer_block,
+)
 
 
 def run_linear(
@@ -102,7 +112,9 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    test_swiglu = SwiGLU(d_model, d_ff)
+    test_swiglu.set_weights(w1_weight, w2_weight, w3_weight)
+    return test_swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -123,7 +135,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    return scaled_dot_product_attention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -157,7 +169,11 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    test_multi_head_self_attention = multihead_self_attention(d_model, num_heads)
+    test_multi_head_self_attention.set_weights(
+        q_proj_weight, k_proj_weight, v_proj_weight, o_proj_weight
+    )
+    return test_multi_head_self_attention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -197,7 +213,14 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    test_rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len)
+    test_multi_head_self_attention = multihead_self_attention(
+        d_model, num_heads, test_rope
+    )
+    test_multi_head_self_attention.set_weights(
+        q_proj_weight, k_proj_weight, v_proj_weight, o_proj_weight
+    )
+    return test_multi_head_self_attention(in_features, token_positions)
 
 
 def run_rope(
@@ -219,7 +242,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    test_RoPE = RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+    return test_RoPE(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
@@ -292,7 +316,24 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    test_transformer_block = transformer_block(
+        d_model, num_heads, d_ff, theta, d_model // num_heads, max_seq_len
+    )
+
+    # Option 2: Manual assignment
+    test_transformer_block.attention.set_weights(
+        weights["attn.q_proj.weight"],
+        weights["attn.k_proj.weight"],
+        weights["attn.v_proj.weight"],
+        weights["attn.output_proj.weight"],
+    )
+    test_transformer_block.RMSNorm1.set_weights(weights["ln1.weight"])
+    test_transformer_block.ffn.set_weights(
+        weights["ffn.w1.weight"], weights["ffn.w2.weight"], weights["ffn.w3.weight"]
+    )
+    test_transformer_block.RMSNorm2.set_weights(weights["ln2.weight"])
+
+    return test_transformer_block(in_features)
 
 
 def run_transformer_lm(
@@ -452,7 +493,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return softmax(in_features, dim=dim)
 
 
 def run_cross_entropy(
