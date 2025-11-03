@@ -29,10 +29,13 @@ from cs336_basics.building_blocks import (
     SwiGLU,
     RotaryPositionalEmbedding,
     softmax,
+    cross_entropy,
     scaled_dot_product_attention,
     multihead_self_attention,
     transformer_block,
     transformer_lm,
+    AdamW,
+    learning_rate_schedule,
 )
 
 
@@ -545,7 +548,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    return cross_entropy(inputs, targets)
 
 
 def run_gradient_clipping(
@@ -566,7 +569,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -594,7 +597,9 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return learning_rate_schedule(
+        it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters
+    )
 
 
 def run_save_checkpoint(

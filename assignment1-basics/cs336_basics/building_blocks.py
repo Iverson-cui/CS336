@@ -1,4 +1,5 @@
 from math import sqrt
+import math
 from re import S
 import torch.nn as nn
 import torch
@@ -248,7 +249,9 @@ class RotaryPositionalEmbedding(nn.Module):
         return x_rot.view(*x.shape)
 
 
-def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+def softmax(
+    x: torch.Tensor, dim: int, compute_dtype: torch.dtype = None
+) -> torch.Tensor:
     """
     Compute the softmax of the input tensor along the specified dimension.
     We use a trick for numerical stability: subtract the max value from the input tensor before exponentiating. This doesn't affect the result.
@@ -260,11 +263,49 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     Returns:
         torch.Tensor Softmax of the input tensor along the specified dimension.
     """
+    original_dtype = x.dtype
+    if compute_dtype is not None and compute_dtype != original_dtype:
+        x = x.to(compute_dtype)
     # Subtract the max for numerical stability
     x_max = torch.max(x, dim=dim, keepdim=True).values
     e_x = torch.exp(x - x_max)
     sum_e_x = torch.sum(e_x, dim=dim, keepdim=True)
-    return e_x / sum_e_x
+    result = e_x / sum_e_x
+    # Cast back to original dtype
+    if compute_dtype is not None and compute_dtype != original_dtype:
+        result = result.to(original_dtype)
+
+    return result
+
+
+def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the cross-entropy loss between logits and targets.
+    """
+    """
+    Given a tensor of inputs and targets, compute the average cross-entropy loss.
+
+    Args:
+        inputs (Float[Tensor, "batch_size vocab_size"]): inputs[i][j] is the
+            unnormalized logit of jth class for the ith example.
+        targets (Int[Tensor, "batch_size"]): Tensor of shape (batch_size,) with the index of the correct class.
+            Each value must be between 0 and `num_classes - 1`.
+
+    Returns:
+        Float[Tensor, ""]: The average cross-entropy loss across examples.
+    """
+    # Extract logits corresponding to the target class
+    target_logits = logits.gather(dim=-1, index=targets.unsqueeze(-1))
+
+    # log-sum-exp trick for numerical stability by subtracting the largest element
+    logsumexp = torch.logsumexp(logits, -1, keepdim=True)
+
+    # Cancel out log and exp after softmax when calculating loss
+    loss_matrix = -target_logits + logsumexp
+
+    # Average loss
+    loss = torch.mean(loss_matrix)
+    return loss
 
 
 def scaled_dot_product_attention(
@@ -615,3 +656,111 @@ class transformer_lm(nn.Module):
         x = self.final_RMSNorm(x)
         x = self.lm_head(x)
         return x
+
+
+class AdamW(torch.optim.Optimizer):
+    def __init__(
+        self, params, lr=1e-3, betas=(0.9, 0.999), weight_decay=0.01, eps=1e-8
+    ):
+        beta1, beta2 = betas
+        if lr < 0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        defaults = {
+            "lr": lr,
+            "beta1": beta1,
+            "beta2": beta2,
+            "weight_decay": weight_decay,
+            "eps": eps,
+        }
+        super().__init__(params, defaults)
+
+    def step(self, closure=None):
+        """Performs a single optimization step."""
+        loss = None
+        if closure is not None:
+            loss = closure()
+        # Iterate over parameter groups
+        # support different hyperparameters for different parameter groups
+        for group in self.param_groups:
+            lr = group["lr"]
+            beta1 = group["beta1"]
+            beta2 = group["beta2"]
+            weight_decay = group["weight_decay"]
+            eps = group["eps"]
+
+            # Iterate over parameters in this group
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+
+                # Initialize state for this parameter if it doesn't exist
+                state = self.state[p]
+                # State initialization
+                if len(state) == 0:
+                    state["step"] = 0
+                    # Exponential moving average of gradient values (first moment)
+                    state["exp_avg"] = torch.zeros_like(p.data)
+                    # Exponential moving average of squared gradient values (second moment)
+                    state["exp_avg_sq"] = torch.zeros_like(p.data)
+                grad = p.grad.data
+                exp_avg = state["exp_avg"]
+                exp_avg_sq = state["exp_avg_sq"]
+                state["step"] += 1
+
+                # Update biased first moment estimate
+                # calculate m_t, using in-place operations to save memory
+                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+
+                # Update biased second moment estimate
+                # calculate v_t, using in-place operations to save memory
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+
+                # Compute bias correction terms
+                bias_correction1 = 1 - beta1 ** state["step"]
+                bias_correction2 = 1 - beta2 ** state["step"]
+
+                # Compute step size (learning rate with bias correction)
+                step_size = lr / bias_correction1
+
+                # Compute bias-corrected second moment and add epsilon
+                bias_corrected_exp_avg_sq = exp_avg_sq / bias_correction2
+                denom = bias_corrected_exp_avg_sq.sqrt().add_(eps)
+
+                # AdamW: Apply decoupled weight decay first
+                p.data.mul_(1 - lr * weight_decay)
+
+                # Apply Adam update
+                p.data.addcdiv_(exp_avg, denom, value=-step_size)
+
+        return loss
+
+
+def learning_rate_schedule(
+    step: int, max_lr: float, min_lr: float, warmup_steps: int, annealing_steps: int
+) -> float:
+    """
+    Compute the learning rate at a given step using linear warmup and cosine annealing.
+
+    Inputs:
+        step: int Current training step.
+        max_lr: float Maximum learning rate after warmup.
+        min_lr: float Minimum learning rate after annealing.
+        warmup_steps: int Number of steps to linearly increase the learning rate.
+        annealing_steps: int Number of steps to cosine anneal the learning rate.
+    """
+    if step < warmup_steps:
+        # Linear warmup
+        lr = max_lr * (step / warmup_steps)
+    elif step < annealing_steps:
+        # Cosine annealing
+        progress = (step - warmup_steps) / (annealing_steps - warmup_steps)
+        cosine_decay = 0.5 * (1.0 + math.cos(progress * math.pi))
+        lr = min_lr + (max_lr - min_lr) * cosine_decay
+    else:
+        # After annealing, keep the learning rate at min_lr
+        lr = min_lr
+
+    # Convert to Python float if it's a tensor
+    if isinstance(lr, torch.Tensor):
+        return lr.item()
+    return float(lr)
