@@ -36,6 +36,7 @@ from cs336_basics.building_blocks import (
     transformer_lm,
     AdamW,
     learning_rate_schedule,
+    clip_grad,
 )
 
 
@@ -562,7 +563,7 @@ def run_gradient_clipping(
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    clip_grad(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:

@@ -1,8 +1,10 @@
 from math import sqrt
 import math
 from re import S
+# from pyparsing import Iterable
 import torch.nn as nn
 import torch
+from typing import Iterable
 
 
 class Linear(nn.Module):
@@ -764,3 +766,24 @@ def learning_rate_schedule(
     if isinstance(lr, torch.Tensor):
         return lr.item()
     return float(lr)
+
+
+def clip_grad(
+    params: Iterable[torch.nn.Parameter], max_norm: float = 1.0, eps: float = 1e-6
+):
+    """
+    Clips the gradients of the given parameters to have a maximum L2 norm of max_norm.
+    """
+    total_norm = 0.0
+    # Compute the L2 norm of the parameter gradients
+    for param in params:
+        if param.grad is not None:
+            total_norm += torch.sum(param.grad**2)
+    total_norm = total_norm**0.5
+
+    clip_coef = max_norm / (total_norm + 1e-6)
+    if clip_coef < 1.0:
+        # If the total norm exceeds the maximum norm, perform clipping
+        for param in params:
+            if param.grad is not None:
+                param.grad.data.mul_(clip_coef)
