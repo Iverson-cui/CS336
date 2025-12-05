@@ -10,7 +10,6 @@ import torch
 from torch import Tensor
 
 import sys
-import os
 
 # Get the directory containing this file
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,12 +21,14 @@ if parent_dir not in sys.path:
 
 # Now import from cs336_basics
 from cs336_basics.BPE import Tokenizer
+import cs336_basics.building_blocks
 from cs336_basics.building_blocks import (
     Linear,
     Embedding,
     RMSNorm,
     SwiGLU,
     RotaryPositionalEmbedding,
+    data_loading,
     softmax,
     cross_entropy,
     scaled_dot_product_attention,
@@ -515,7 +516,9 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return cs336_basics.building_blocks.data_loading(
+        dataset, batch_size, context_length, device
+    )
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -619,7 +622,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    cs336_basics.building_blocks.save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -640,7 +643,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return cs336_basics.building_blocks.load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(

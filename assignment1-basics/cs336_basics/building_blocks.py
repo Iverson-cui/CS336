@@ -1,10 +1,12 @@
+from typing import IO, Iterable, BinaryIO
 from math import sqrt
 import math
 from re import S
 # from pyparsing import Iterable
+import numpy
 import torch.nn as nn
 import torch
-from typing import Iterable
+import os
 
 
 class Linear(nn.Module):
@@ -787,3 +789,59 @@ def clip_grad(
         for param in params:
             if param.grad is not None:
                 param.grad.data.mul_(clip_coef)
+
+
+def data_loading(x: numpy.ndarray, batch_size: int, context_length: int, devstr: str):
+    """
+    Return one random batch of (inputs, targets), each of shape (batch_size, context_length).
+    The tuple returned starts at a random position so tuples returned is a random sequence in 1D array x.
+    """
+    max_start = x.shape[0] - context_length - 1
+    if max_start < 0:
+        raise ValueError("Input sequence is shorter than context_length + 1.")
+
+    # Sample random start indices for each sequence in the batch
+    starts = numpy.random.randint(0, max_start + 1, size=batch_size)
+
+    input_batch = numpy.stack([x[s : s + context_length] for s in starts]).astype(
+        numpy.int64
+    )
+    target_batch = numpy.stack(
+        [x[s + 1 : s + context_length + 1] for s in starts]
+    ).astype(numpy.int64)
+
+    input_tensor = torch.as_tensor(input_batch, device=devstr)
+    target_tensor = torch.as_tensor(target_batch, device=devstr)
+
+    return input_tensor, target_tensor
+
+
+def save_checkpoint(
+    model: nn.Module, optimizer: torch.optim.Optimizer, iteration: int, out
+):
+    """
+    Save the model and optimizer state dictionaries along with the current iteration number to a checkpoint file.
+
+    Inputs:
+        model: nn.Module The model to save.
+        optimizer: torch.optim.Optimizer The optimizer to save.
+        iteration: int The current training iteration.
+        out: str The output file path for the checkpoint.
+    """
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "iteration": iteration,
+    }
+    torch.save(checkpoint, out)
+
+
+def load_checkpoint(
+    src: str | os.PathLike | BinaryIO | IO[bytes],
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+) -> int:
+    checkpoint = torch.load(src)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    return checkpoint["iteration"]
